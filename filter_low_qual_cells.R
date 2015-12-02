@@ -300,6 +300,7 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
     
     feature=test_set_features[,f]
     df=data.frame(counts=log(feature+0.0001), type=types)
+<<<<<<< HEAD
     plot<-ggplot2::ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
                                                                                                                                                                                                       axis.text.x=element_blank(),axis.text.y=element_text(size=text_size),
                                                                                                                                                                                                       axis.ticks.length = unit(0, "mm"),
@@ -313,6 +314,21 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
                                                                                                                                                                                                       panel.grid.major=element_blank(),
                                                                                                                                                                                                       panel.grid.minor=element_blank(),
                                                                                                                                                                                                       plot.background=element_blank()) + scale_color_manual(values=col)
+=======
+    plot<-ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
+                                                                                                                                                                                             axis.text.x=element_blank(),axis.text.y=element_text(size=text_size),
+                                                                                                                                                                                             axis.ticks.length = unit(0, "mm"),
+                                                                                                                                                                                             axis.title.x=element_blank(),
+                                                                                                                                                                                             axis.title.y=element_blank(),
+                                                                                                                                                                                             legend.position="none",
+                                                                                                                                                                                             plot.title=element_text(size=text_size),
+                                                                                                                                                                                             panel.background=element_blank(),
+                                                                                                                                                                                             panel.border= element_rect(fill=NA,color="black", size=border_size, 
+                                                                                                                                                                                                                        linetype="solid"),
+                                                                                                                                                                                             panel.grid.major=element_blank(),
+                                                                                                                                                                                             panel.grid.minor=element_blank(),
+                                                                                                                                                                                             plot.background=element_blank()) + scale_color_manual(values=col)
+>>>>>>> a06093e9abf87d16cc98ebe07a7dab3da2769d3f
     return(plot)
   }, simplify=FALSE)
   
@@ -326,6 +342,7 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
     
     feature=test_set_features[,f]
     df=data.frame(counts=log(feature+0.0001), type=types)
+<<<<<<< HEAD
     plot<-ggplot2::ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
                                                                                                                                                                                                       axis.text.x=element_blank(),axis.text.y=element_text(size=text_size),
                                                                                                                                                                                                       axis.ticks.length = unit(0, "mm"),
@@ -339,6 +356,21 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
                                                                                                                                                                                                       panel.grid.major=element_blank(),
                                                                                                                                                                                                       panel.grid.minor=element_blank(),
                                                                                                                                                                                                       plot.background=element_blank()) + scale_color_manual(values=col)
+=======
+    plot<-ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
+                                                                                                                                                                                             axis.text.x=element_blank(),axis.text.y=element_text(size=text_size),
+                                                                                                                                                                                             axis.ticks.length = unit(0, "mm"),
+                                                                                                                                                                                             axis.title.x=element_blank(),
+                                                                                                                                                                                             axis.title.y=element_blank(),
+                                                                                                                                                                                             legend.position="none",
+                                                                                                                                                                                             panel.background=element_blank(),
+                                                                                                                                                                                             plot.title=element_text(size=text_size),
+                                                                                                                                                                                             panel.border= element_rect(fill=NA,color="black", size=border_size, 
+                                                                                                                                                                                                                        linetype="solid"),
+                                                                                                                                                                                             panel.grid.major=element_blank(),
+                                                                                                                                                                                             panel.grid.minor=element_blank(),
+                                                                                                                                                                                             plot.background=element_blank()) + scale_color_manual(values=col)
+>>>>>>> a06093e9abf87d16cc98ebe07a7dab3da2769d3f
     return(plot)
   }, simplify=FALSE)
   
@@ -421,6 +453,14 @@ normalise_by_factor<-function(counts, factor) {
 ###############################TRAINING DATA RAW COUNTS####################################
 ################################################################################
 
+<<<<<<< HEAD
+=======
+common_feature_names=c("Mapped reads %", "Non-exon reads %", "Multi-mapped reads %", "Transcriptome variance", "Cytoplasm %", "mtDNA %", "Mitochondria %")
+all_feature_names= c("Total reads", "Mapped reads %", "Multi-mapped reads %", "Non-exon reads%", "Ambigious genes %", "ERCC ratio", "# detected genes", "Transcriptome variance",
+                     "Highly variable Int.1", "Highly variable Int.2", "Highly variable Int.3", "Highly variable Int.4", "Highly variable Int.5", 
+                     "#Highly expressed", "Apoptosis %", "Metablosim %", "Ribosomes %", "Membrane %", "Cytoplasm %", "Extracellular region %", "mtDNA", "Mitochondria upreg. %", "Mitochondria downreg. %", "Actb %", "Gadph%")
+
+>>>>>>> a06093e9abf87d16cc98ebe07a7dab3da2769d3f
 output_dir="/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/"
 GO_terms_input="/Users/ti1/Google\ Drive/projects/quality_control/tables/biological_features.txt"
 extra_genes_input="/Users/ti1/Google\ Drive/projects/quality_control/tables/extra_genes.txt"
@@ -470,7 +510,11 @@ rownames(counts_nm)=genes
 output_dir="/Users/ti1/Google Drive/projects/quality_control/data/23_11_15"
 file_name=paste0(file_name, "_raw_counts")
 
+<<<<<<< HEAD
 features=extract_features(counts_nm, read_metrics, file_name, output_dir , common_features, GO_terms, extra_genes, "mouse")
+=======
+features=(extract_features(read_metrics, counts_nm, genes, file_name,output_dir , common_features_input, GO_terms_input, extra_genes_input, "mouse"))
+>>>>>>> a06093e9abf87d16cc98ebe07a7dab3da2769d3f
 
 quality_PCA = asses_cell_quality_PCA(features[[1]], paste0(output_dir, "/", file_name), paste0(file_name, "_all_features"))
 quality_PCA = asses_cell_quality_PCA(features[[2]], paste0(output_dir, "/", file_name), paste0(file_name, "_common_features"))
@@ -596,10 +640,26 @@ features_data_sets=sapply(1:length(genes_expr), function(x){
   features=extract_features(counts_nm, read_metrics, file_name, output_dir, common_features, GO_terms, extra_genes_human, "human")
   all=features[[1]]
   common=features[[2]]
+<<<<<<< HEAD
+=======
+  
+  colnames(all)=all_feature_names
+  colnames(common)=common_feature_names
+  
+  quality_PCA = asses_cell_quality_PCA(all, paste0(output_dir, "/",file_name), paste0(file_name, "_all"))
+  
+  
+>>>>>>> a06093e9abf87d16cc98ebe07a7dab3da2769d3f
   return(features)
 }, simplify=FALSE)
 
 
+<<<<<<< HEAD
+=======
+combined=rbind(features_data_sets[[1]][[2]], features_data_sets[[2]][[2]])
+
+
+>>>>>>> a06093e9abf87d16cc98ebe07a7dab3da2769d3f
 #CHECK IF SVM PREDICTS HUMAN CELLS
 training_set_common_features=read.table("/Users/ti1/Google Drive/projects/quality_control/data/23_11_15/ola_mES_raw_counts/ola_mES_raw_counts.common.features", header=TRUE)
 training_set_all_features=read.table("/Users/ti1/Google Drive/projects/quality_control/data/23_11_15/ola_mES_raw_counts/ola_mES_raw_counts.all.features", header=TRUE)
@@ -616,6 +676,7 @@ ramskold_common=read.table("/Users/ti1/Google Drive/projects/quality_control/dat
 ramskold_all=read.table("/Users/ti1/Google Drive/projects/quality_control/data/not_annotated_data/ramskold_2012_cancer_HTSeq-0_6_1/ramskold_2012_cancer_HTSeq-0_6_1.all.features", header=TRUE)
 output_dir="/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/"
 
+<<<<<<< HEAD
 
 quality_PCA_rams = asses_cell_quality_PCA(ramskold_all, paste0(output_dir, "/","ramskold_2012_cancer_HTSeq-0_6_1"), paste0("ramskold_2012_cancer_HTSeq-0_6_1", "_all"))
 quality_PCA_quake = asses_cell_quality_PCA(quake_all, paste0(output_dir, "/","quake_smart_13_HTSeq-0_6_1"), paste0("quake_smart_13_HTSeq-0_6_1", "_all"))
@@ -630,6 +691,24 @@ data_frame<-data.frame(type=c(rep("human1", nrow(quake_common)), rep("human2", n
 col=c("0" = "red","1" = "darkgreen")
 
 plot<-ggplot(data_frame, aes(x=PC1, y=PC2), size=1) + geom_point(aes(colour=type)) + theme_bw()  + theme(axis.line=element_blank(),
+=======
+colnames(ramskold_all)=all_feature_names
+colnames(quake_all)=all_feature_names
+
+combined=rbind(quake_common, ramskold_common, training_set_common_features)
+
+quality_PCA = asses_cell_quality_PCA(ramskold_all, paste0(output_dir, "/","ramskold_2012_cancer_HTSeq-0_6_1"), paste0("ramskold_2012_cancer_HTSeq-0_6_1", "_all"))
+quality_PCA = asses_cell_quality_PCA(quake_all, paste0(output_dir, "/","quake_smart_13_HTSeq-0_6_1"), paste0("quake_smart_13_HTSeq-0_6_1", "_all"))
+
+
+
+pca<-prcomp(combined, scale=TRUE, center=TRUE)
+pca_var_explained=summary(pca), training_set_labels[,2]
+data_frame<-data.frame(type=c(rep("human1", nrow(common)), rep("human2", nrow(common_human_train))), pca$x)  
+col=c("0" = "red","1" = "darkgreen")
+
+plot<-ggplot(data_frame, aes(x=PC1, y=PC2)) + geom_point(aes(colour=type)) + theme_bw()  + theme(axis.line=element_blank(),
+>>>>>>> a06093e9abf87d16cc98ebe07a7dab3da2769d3f
                                                                                                  axis.text.x=element_text(),axis.text.y=element_text(),
                                                                                                  axis.ticks.length = unit(0, "mm"),
                                                                                                  axis.title.x=element_blank(),
@@ -642,6 +721,7 @@ plot<-ggplot(data_frame, aes(x=PC1, y=PC2), size=1) + geom_point(aes(colour=type
                                                                                                  panel.grid.minor=element_blank(),
                                                                                                  plot.background=element_blank()) 
 
+<<<<<<< HEAD
 ggsave(paste0(output_dir, "/human_and_mouse_cancer_cells.pdf"), plot, width = 80, height = 90, units="mm")
 
 #PREDICT FROM MOUSE TO QUAKE CELLS
@@ -651,3 +731,14 @@ length(which((quality_PCA_quake[,2]==quality_SVM[,2])==TRUE))/96
 #PREDICT FROM MOUSE TO RAMSKOLD CELLS
 quality_SVM=asses_cell_quality_SVM(training_set_common_features[, -c(4,5)], training_set_labels[,2], ramskold_common[, -c(4,5)], paramaters_core)
 length(which((quality_PCA_rams[,2]==quality_SVM[,2])==TRUE))/18
+=======
+ggsave(paste0(output_dir, "/human_and_mouse_cancer_cells.pdf"), plot)
+
+quality_PCA = asses_cell_quality_PCA(quake_common, paste0(output_dir, "/",file_name), "test")
+quality_SVM=asses_cell_quality_SVM(quake_common[, -c(2,5,6,7)], quality_PCA, ramskold_common[, -c(2,5,6,7)], paramaters_core, output_dir)
+quality_PCA = asses_cell_quality_PCA(ramskold_all, paste0(output_dir, "/",file_name), paste0(file_name, "_all"))
+intersect(which(quality_PCA[,2]=="0"),which(quality_SVM==0))
+
+length(which(quality_PCA[,2]=="0"))
+length(which(quality_SVM==0))
+>>>>>>> a06093e9abf87d16cc98ebe07a7dab3da2769d3f
