@@ -12,36 +12,29 @@ library(e1071)
 library(mvoutlier)
 library(grid)
 
-#EXTRACT FEATURES FOR DATASET
-extract_features<-function(read_metrics, counts, genes, file_name, output_dir, common_features_input, GO_terms_input, extra_genes_input, organism) {
-  info ("Extract features")
-  info(paste0("Gene expression: ", input))
-  info(paste0("Features output dir: ", output_dir))
-  info(paste0("GO Terms to use: ", GO_terms_input))
-  info(paste0("Common Features: ", common_features_input))
-  info(paste0("Extra genes Features: ", extra_genes_input))
+#' Extracts biological and technical features for given dataset
+#' @param counts_nm Gene expression counts dataframe (genes x cells). Either normalised by library size or TPM values
+#' @param read_metrics Dataframe with mapping statistics produced by python pipeline
+#' @param prefix Prefix of outputfiles
+#' @param output_dir Output directory of files
+#' @param common_features Subset of features that are applicable within one species, but across cell types
+#' @param GO_terms DataFrame with gene ontology term IDs, that will be used in feature extraction
+#' @param extra_genes Additional genes used for feature extraction
+#' @param Organism The target organism to generate the features for
+#' @details This function takes a combination of gene counts and mapping statistics to extract biological and technical features, which than can be used for quality data analysis
+extract_features<-function(counts_nm, read_metrics, prefix, output_dir, common_features, GO_terms, extra_genes, organism) {
+  info ("Extracting features")
+  o= paste(output_dir, prefix ,sep="/")
+  print(output_dir)
+  dir.create(o, showWarnings = TRUE, recursive = TRUE)
   
-  
-  output_dir= paste(output_dir, file_name ,sep="/")
-  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-  
-  #LOAD ALL DATA
-  GO_terms<-read.table(GO_terms_input, header=FALSE, stringsAsFactors=FALSE)
-  extra_genes=read.table(extra_genes_input, header=FALSE, stringsAsFactors=FALSE, fill=TRUE)
-  common_features=unlist(read.table(common_features_input, header=FALSE, stringsAsFactors=FALSE, fill=TRUE))
-  extra_genes=apply(extra_genes, 1, function(x){
-    return(subset(x, x != ""))
-  })
-  
-  info(paste0("DATA Loaded."))
-  
-  
-  cell_names=colnames(counts)
-  cell_names<-cell_names[-1]
-  rownames(counts)<-genes
-  
+  genes=rownames(counts_nm)
+  if (is.null(genes) | length(genes)==0) {
+    info("Please annotate your expression matrix with genes identifiers as rownmaes")
+    return (NULL)
+  }
   #GENERATE ALL FEATURES       
-  features_all<-feature_generation(read_metrics, counts, GO_terms, extra_genes, organism)
+  features_all<-feature_generation(counts_nm, read_metrics, GO_terms, extra_genes, organism)
   info(paste0("FEATURES generated."))
   sds<-apply(features_all, 2, sd)
   #REMOVE 0-VARIANCE VALUE FEATURES
@@ -49,8 +42,8 @@ extract_features<-function(read_metrics, counts, genes, file_name, output_dir, c
   types<-c("all", "common")
   
   features_common=features_all[,which(colnames(features_all) %in% common_features)]
-  f_all=paste0(output_dir, "/", file_name, ".", types[1], ".features")
-  f_common=paste0(output_dir, "/", file_name, ".", types[2], ".features")
+  f_all=paste0(o, "/", prefix, ".", types[1], ".features")
+  f_common=paste0(o, "/", prefix, ".", types[2], ".features")
   write.table(features_common, f_common)
   write.table(features_all, f_all)
   
@@ -62,14 +55,20 @@ extract_features<-function(read_metrics, counts, genes, file_name, output_dir, c
 }
 
 
-#GENERATE ALL FEATURES
-feature_generation<-function(read_metrics, counts_nm, GO_terms, extra_genes, organism) {
+#' Helper Function to create all features
+#' @param counts_nm Gene expression counts dataframe (genes x cells). Either normalised by library size or TPM values
+#' @param read_metrics Dataframe with mapping statistics produced by python pipeline
+#' @param common_features Subset of features that are applicable within one species, but across cell types
+#' @param GO_terms DataFrame with gene ontology term IDs, that will be used in feature extraction
+#' @param extra_genes Additional genes used for feature extraction
+#' @param Organism The target organism to generate the features for
+#' @return Returns the entire set of features
+feature_generation<-function(counts_nm, read_metrics, GO_terms, extra_genes, organism) {
   
   features<-list()
   
   #REMOVE ALL 0 GENES
   counts_nm=data.frame(counts_nm)
-  
   genes_mean<-rowMeans(counts_nm)
   genes_zero<-which(genes_mean == 0)
   genes_mean<-genes_mean[-genes_zero]
@@ -80,10 +79,12 @@ feature_generation<-function(read_metrics, counts_nm, GO_terms, extra_genes, org
   ########################################
   
   #ONLY CONSIDER READS MAPPES TO GENES (EXCLUDING ERCCS)
-  number_mapped_reads_prop=(read_metrics$mapped-read_metrics$ercc)/read_metrics$total
-  read_metrics_depending_mapped_reads=read_metrics[, -c(1:3)]
-  read_metrics_depending_mapped_reads_prop=read_metrics_depending_mapped_reads/read_metrics$mapped
-  
+  ercc_counts=read_metrics$ercc
+  if(is.null(ercc_counts)) {
+    ercc_counts=0
+  }
+  number_mapped_reads_prop=(read_metrics$mapped-ercc_counts)/read_metrics$total
+  multi_mapped_prop=read_metrics[, 4]/read_metrics$mapped
   
   #HOPE THAT THIS WORKS ALSO WHEN REGRESSION NORMALIZATION HAS BEEN APPLIED
   #AS SOME REGRESSION METHODS ALSO PUSH 0 TO ANOTHER VALUE
@@ -117,32 +118,53 @@ feature_generation<-function(read_metrics, counts_nm, GO_terms, extra_genes, org
   colnames(num_of_high_var_exp_genes_interval)<-paste0("num_of_high_var_exp_genes_interval_", 1:ncol(num_of_high_var_exp_genes_interval))
   
   cell_to_mean_corr<-cor(counts_nm, rowMeans(counts_nm), method="spearman")
-  colnames(cell_to_mean_corr)=c("cell_to_mean_corr")
   
+  techincal_features=cbind(read_metrics$total, number_mapped_reads_prop, multi_mapped_prop, detected_genes, transcriptome_variance,num_of_high_var_exp_genes_interval, cell_to_mean_corr,number_of_highly_expressed_variable_genes)
+  tech_names=c("#Total reads", "Mapped %", "Multi-mapped %", "#Detected genes", "Transcriptome variance", paste0("High expr.var genes intv.", 1:ncol(num_of_high_var_exp_genes_interval)), "Cell-to-mean corr", "#High exp.var genes")
   
+  if(ncol(read_metrics) > 23) {
+    additional_mapping_stats=read_metrics[, 24:(ncol(read_metrics))]
+    additional_mapping_stats_prop=additional_mapping_stats/read_metrics$mapped
+    
+    #ADDITIONAL MAPPING STATISTICS PROVIDED BY HT-SEQ
+    additional_mapping_stats_prop_names=sapply(colnames(additional_mapping_stats_prop), function (x) {
+      
+      if(x=="__not_aligned"){ return("Unmapped reads %")}
+      if(x=="__no_feature"){ return("Non-exonic reads %")}   
+      if(x=="__ambiguous"){ return( "Ambigious-gene reads %")}   
+      if(x=="__alignment_not_unique"){ return( "Multi-mapped reads (HTseq) %")}  
+      if(x=="__too_low_aQual"){ return( "Low aligQual %")} 
+      if(x=="ercc"){ return( "ERCC/mapped reads")}  
+    })
+    techincal_features=cbind(techincal_features, additional_mapping_stats_prop)
+    tech_names = c(tech_names, additional_mapping_stats_prop_names)
+  }
+  
+  colnames(techincal_features)=tech_names
   ########################################
   ####BIOLOGICAL FEATURES##################
   ########################################
   
   #ASSUME IT IS MOUSE
-  mouse_GO_BP <- annFUN.org("BP", mapping = "org.Mm.eg.db", ID = "ensembl")
-  mouse_GO_CC <- annFUN.org("CC", mapping = "org.Mm.eg.db", ID = "ensembl")
+  GO_BP <- annFUN.org("BP", mapping = "org.Mm.eg.db", ID = "ensembl")
+  GO_CC <-annFUN.org("CC", mapping = "org.Mm.eg.db", ID = "ensembl")
   
   if(organism == "human") {
-    mouse_GO_CC <- annFUN.org("CC", mapping = "org.Hs.eg.db", ID = "ensembl")
-    mouse_GO_BP <- annFUN.org("BP", mapping = "org.Hs.eg.db", ID = "ensembl")  
+    GO_BP <- annFUN.org("BP", mapping = "org.Hs.eg.db", ID = "ensembl")  
+    GO_CC <- annFUN.org("CC", mapping = "org.Hs.eg.db", ID = "ensembl")
   }
-
-  mouse_GO=c(mouse_GO_BP, mouse_GO_CC)
+  
+  GO=c(GO_BP, GO_CC)
   
   #PROPORTION OF MAPPED READS MAPPED TO THE GO TERM
   go_prop=sapply(unlist(GO_terms), function (go_id) {
-    prop=sum_prop(counts_nm, unlist(mouse_GO[go_id])) 
+    prop=sum_prop(counts_nm, unlist(GO[go_id])) 
     return(prop)
   }, simplify=FALSE)
   go_prop=do.call(cbind, go_prop)
   go_names=Term(unlist(GO_terms))
-  colnames(go_prop)=go_names  
+  go_names=sapply(go_names, simple_cap)
+  colnames(go_prop)=go_names 
   
   #PROPORTION OF MAPPED READS MAPPED TO SPECIFIC GENES
   extra_genes_prop=sapply(extra_genes, function (extra_g) {
@@ -156,25 +178,42 @@ feature_generation<-function(read_metrics, counts_nm, GO_terms, extra_genes, org
   }, simplify=FALSE)
   colnames(extra_genes_prop)=unlist(extra_genes_colnames)
   
-  total_reads=read_metrics$total
-  features<-cbind(total_reads, number_mapped_reads_prop, read_metrics_depending_mapped_reads_prop, 
-                  detected_genes, transcriptome_variance, num_of_high_var_exp_genes_interval, cell_to_mean_corr, number_of_highly_expressed_variable_genes, 
-                  go_prop, extra_genes_prop)
+  biological_features=cbind(go_prop, extra_genes_prop)
+  colnames(biological_features)=paste0(colnames(biological_features), " %")
   
+  features<-data.frame(techincal_features, biological_features)
+  colnames(features)=c(colnames(techincal_features), colnames(biological_features))
   rownames(features)=colnames(counts_nm)
   return(features)
 }
 
+#' Sums up normalised values of genes to groups. Supports TPM and proportion of mapped reads
+#' @param counts Normalised gene expression count matrix
+#' @param gene_interest dataframe of genes of interest to merge
 sum_prop=function(counts, genes_interest) {
   genes_interest_i<-which(rownames(counts) %in% unlist(genes_interest))
   genes_interest_counts_prop<-colSums(counts[genes_interest_i,])
   return(genes_interest_counts_prop)
 }
 
-#ASSES QUALITY OF A CELL USING FEATURES AND LABELS FROM 960mES CELLS
-asses_cell_quality_SVM<-function(training_set_features, training_set_labels, test_set_features, ensemble_param, output_dir) {
+
+#' Converts all first letters to capital letters
+simple_cap <- function(x) {
+  s <- strsplit(x, " ")[[1]]
+  paste(toupper(substring(s, 1,1)), substring(s, 2),
+        sep="", collapse=" ")
+}
+
+#' ASSESS QUALITY OF A CELL SVM VERSION
+#' @param training_set_features A training set containing features (cells x features) for prediction
+#' @param training_set_labels Annotation of each individual cell if high or low quality (1 or 0 respectively)
+#' @param test_set_features Dataset to predict containing features (cells x features)
+#' @param ensemble_param Dataframe of parameters for SVM
+#' @return Returns a dataframe indicating which cell is low or high quality (0 or 1 respectively)
+#' @details This function takes a traning set + annotation to predict a test set. It requires that hyper-parameters have been optimised. 
+asses_cell_quality_SVM<-function(training_set_features, training_set_labels, test_set_features, ensemble_param) {
   
-  data_set<-data.frame(l=training_set_labels[,2], unlist(as.matrix(training_set_features)))
+  data_set<-data.frame(l=training_set_labels, unlist(as.matrix(training_set_features)))
   formula = l ~ .
   data_set$l <-factor(data_set$l)
   
@@ -183,23 +222,30 @@ asses_cell_quality_SVM<-function(training_set_features, training_set_labels, tes
   final_results<-sapply(1:nrow(ensemble_param), function(x) {
     parameters<-ensemble_param[x,]
     weights <- table(data_set$l) 
-    weights[1]<-3
+    weights[1]<-parameters[3]
     weights[2] <- 1
     kernel<-"radial"
     
-    model<-svm(formula, data=data_set, gamma=parameters[1], cost=parameters[2], kernel=kernel, class.weights=weights)
+    model<-e1071::svm(formula, data=data_set, gamma=parameters[1], cost=parameters[2], kernel=kernel, class.weights=weights)
     
     pred_test<- predict(model, test_data)
     svm_test<-as.numeric(levels(pred_test))[pred_test]
     return(svm_test)
   }, simplify=FALSE)
   final_results<-do.call(cbind, final_results)
-  final<-vote(final_results)
-  return(as.matrix(final))
   
+  #Voting scheme to determine final label
+  final<-vote(final_results)
+  final_df=data.frame(cell=rownames(test_set_features), quality=final)
+  return(final_df)
 }
 
-#ASSES CELL QUALITY USING PCA AND OUTLIER DETECTION ON ALL DIMENSIONS
+#' ASSESS CELL QUALITY USING PCA AND OUTLIER DETECTION
+#' @param test_set_features Input dataset containing features (cell x features)
+#' @param output_dir Output directory
+#' @param prefix Prefix of output 
+#' @return Returns a dataframe indicating which cell is low or high quality (0 or 1 respectively)
+#' @details This function applies PCA on features and uses outlier detection to determine which cells are low and which are high quality
 asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
   
   pca<-prcomp(test_set_features, scale=TRUE, center=TRUE)
@@ -216,6 +262,7 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
   mapped_prop=t.test(test_set_features[,2][low_qual_i], test_set_features[,2][-low_qual_i], alternative = "less")$p.value
   
   
+  #Determine which cluster is low and which high quality
   if ((mapped_prop) > 0.5) {
     types=rep(0, nrow(test_set_features))
     types[low_qual_i] = 1
@@ -229,18 +276,18 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
   col=c("0" = "red","1" = "darkgreen")
   
   
-  plot<-ggplot(data_frame, aes(x=PC1, y=PC2)) + geom_point(aes(colour=type)) + theme_bw()  + theme(axis.line=element_blank(),
-                                                                                                   axis.text.x=element_text(),axis.text.y=element_text(),
-                                                                                                   axis.ticks.length = unit(0, "mm"),
-                                                                                                   axis.title.x=element_blank(),
-                                                                                                   axis.title.y=element_blank(),
-                                                                                                   panel.background=element_blank(),
-                                                                                                   panel.border= element_rect(fill=NA,color="black", 
-                                                                                                                              linetype="solid"),
-                                                                                                   panel.grid.major=element_blank(),
-                                                                                                   panel.grid.minor=element_blank(),
-                                                                                                   plot.background=element_blank()) + scale_colour_manual(values=col)
-  
+  plot<-ggplot2::ggplot(data_frame, aes(x=PC1, y=PC2)) + geom_point(aes(colour=type)) + theme_bw()  + theme(axis.line=element_blank(),
+                                                                                                            axis.text.x=element_text(),axis.text.y=element_text(),
+                                                                                                            axis.ticks.length = unit(0, "mm"),
+                                                                                                            axis.title.x=element_blank(),
+                                                                                                            axis.title.y=element_blank(),
+                                                                                                            panel.background=element_blank(),
+                                                                                                            panel.border= element_rect(fill=NA,color="black", 
+                                                                                                                                       linetype="solid"),
+                                                                                                            panel.grid.major=element_blank(),
+                                                                                                            panel.grid.minor=element_blank(),
+                                                                                                            plot.background=element_blank()) + scale_colour_manual(values=col)
+  #Plot top 3 features for PC1
   top5_PC1_i=order(abs(pca$rotation[,1]), decreasing = TRUE)
   top5_f_pc1=names(pca$rotation[(top5_PC1_i[1:3]),1])
   names=colnames(test_set_features)
@@ -253,23 +300,23 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
     
     feature=test_set_features[,f]
     df=data.frame(counts=log(feature+0.0001), type=types)
-    plot<-ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
-                                                                                                                                                                                             axis.text.x=element_blank(),axis.text.y=element_blank(),
-                                                                                                                                                                                             axis.ticks.length = unit(0, "mm"),
-                                                                                                                                                                                             axis.title.x=element_blank(),
-                                                                                                                                                                                             axis.title.y=element_blank(),
-                                                                                                                                                                                             legend.position="none",
-                                                                                                                                                                                             plot.title=element_text(size=text_size),
-                                                                                                                                                                                             panel.background=element_blank(),
-                                                                                                                                                                                             panel.border= element_rect(fill=NA,color="black", size=border_size, 
-                                                                                                                                                                                                                        linetype="solid"),
-                                                                                                                                                                                             panel.grid.major=element_blank(),
-                                                                                                                                                                                             panel.grid.minor=element_blank(),
-                                                                                                                                                                                             plot.background=element_blank()) + scale_color_manual(values=col)
+    plot<-ggplot2::ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
+                                                                                                                                                                                                      axis.text.x=element_blank(),axis.text.y=element_text(size=text_size),
+                                                                                                                                                                                                      axis.ticks.length = unit(0, "mm"),
+                                                                                                                                                                                                      axis.title.x=element_blank(),
+                                                                                                                                                                                                      axis.title.y=element_blank(),
+                                                                                                                                                                                                      legend.position="none",
+                                                                                                                                                                                                      plot.title=element_text(size=text_size),
+                                                                                                                                                                                                      panel.background=element_blank(),
+                                                                                                                                                                                                      panel.border= element_rect(fill=NA,color="black", size=border_size, 
+                                                                                                                                                                                                                                 linetype="solid"),
+                                                                                                                                                                                                      panel.grid.major=element_blank(),
+                                                                                                                                                                                                      panel.grid.minor=element_blank(),
+                                                                                                                                                                                                      plot.background=element_blank()) + scale_color_manual(values=col)
     return(plot)
   }, simplify=FALSE)
   
-  
+  #Plot top 3 features for PC2
   top5_PC2_i=order(abs(pca$rotation[,2]), decreasing = TRUE)
   top5_f_pc2=names(pca$rotation[(top5_PC2_i[1:3]),2])
   names=colnames(test_set_features)
@@ -279,22 +326,24 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
     
     feature=test_set_features[,f]
     df=data.frame(counts=log(feature+0.0001), type=types)
-    plot<-ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
-                                                                                                                                                                                             axis.text.x=element_blank(),axis.text.y=element_blank(),
-                                                                                                                                                                                             axis.ticks.length = unit(0, "mm"),
-                                                                                                                                                                                             axis.title.x=element_blank(),
-                                                                                                                                                                                             axis.title.y=element_blank(),
-                                                                                                                                                                                             legend.position="none",
-                                                                                                                                                                                             panel.background=element_blank(),
-                                                                                                                                                                                             plot.title=element_text(size=text_size),
-                                                                                                                                                                                             panel.border= element_rect(fill=NA,color="black", size=border_size, 
-                                                                                                                                                                                                                        linetype="solid"),
-                                                                                                                                                                                             panel.grid.major=element_blank(),
-                                                                                                                                                                                             panel.grid.minor=element_blank(),
-                                                                                                                                                                                             plot.background=element_blank()) + scale_color_manual(values=col)
+    plot<-ggplot2::ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
+                                                                                                                                                                                                      axis.text.x=element_blank(),axis.text.y=element_text(size=text_size),
+                                                                                                                                                                                                      axis.ticks.length = unit(0, "mm"),
+                                                                                                                                                                                                      axis.title.x=element_blank(),
+                                                                                                                                                                                                      axis.title.y=element_blank(),
+                                                                                                                                                                                                      legend.position="none",
+                                                                                                                                                                                                      panel.background=element_blank(),
+                                                                                                                                                                                                      plot.title=element_text(size=text_size),
+                                                                                                                                                                                                      panel.border= element_rect(fill=NA,color="black", size=border_size, 
+                                                                                                                                                                                                                                 linetype="solid"),
+                                                                                                                                                                                                      panel.grid.major=element_blank(),
+                                                                                                                                                                                                      panel.grid.minor=element_blank(),
+                                                                                                                                                                                                      plot.background=element_blank()) + scale_color_manual(values=col)
     return(plot)
   }, simplify=FALSE)
   
+  #ARRANGE TOP FEATURES ONTO A GRID
+  #PLOT PCA IN THE MIDDLE AND FEATURES LEFT AND BOTTOM
   l=matrix(c(2,2,3,3,4,4, rep(1,5), 5,rep(1,5), 5,rep(1,5), 6,rep(1,5), 6,rep(1,5), 7),nrow=6)
   l=cbind(l, c(rep(1,5), 7))
   
@@ -305,13 +354,13 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
   pdf(o, width=10, height=7)
   multiplot(plot,  plotlist=c(plotsPC1,(plotPC2)),layout=l)
   dev.off()
-  annot = cbind(rownames(test_set_features), types)
+  annot = data.frame(cell=rownames(test_set_features), quality=types)
   return(annot)
 }
 
 
+#' Internal multiplot function to combine plots onto a grid
 multiplot <- function(..., plotlist=NULL, file, cols=6, layout=NULL) {
-  library(grid)
   
   # Make a list from the ... arguments and plotlist
   plots <- c(list(...), plotlist)
@@ -332,21 +381,22 @@ multiplot <- function(..., plotlist=NULL, file, cols=6, layout=NULL) {
     
   } else {
     # Set up the page
-    grid.newpage()
-    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    grid::grid.newpage()
+    grid::pushViewport(grid::viewport(layout = grid::grid.layout(nrow(layout), ncol(layout))))
     
     # Make each plot, in the correct location
     for (i in 1:numPlots) {
       # Get the i,j matrix positions of the regions that contain this subplot
       matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
       
-      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
-                                      layout.pos.col = matchidx$col))
+      print(plots[[i]], vp = grid::viewport(layout.pos.row = matchidx$row,
+                                            layout.pos.col = matchidx$col))
     }
   }
 }
 
-#VOTING SCHEME FOR MODEL ENSEMBLE
+#' Internal voting function to get final labels
+#' @param predicitions Predicted labels
 vote<-function(predictions) {
   freq<-apply(predictions, 1, function (x) {
     f<-table(x)
@@ -357,73 +407,33 @@ vote<-function(predictions) {
   return(freq)
 }
 
-#CALCULATE ACCURACY
-calculate_accuracy<-function(pred, lab) {
-  table(lab[,2], pred)
-  success_i<-which(lab[,2]==pred)  
-  bad_original_i<-which(lab[,2]==0 & lab[,3]!="S" & lab[,3]!="G")
-  bad_all_i<-which(lab[,2]==0)
-  good_i<-which(lab[,2]==1)
-  
-  
-  sucess_bad_all_i<-intersect(success_i, bad_all_i)
-  sucess_good_i<-intersect(success_i, good_i)
-  TP<-length(sucess_bad_all_i)
-  TN<-length(sucess_good_i)
-  FN<-length(bad_all_i)-TP
-  FP<-length(good_i)-TN
-  
-  specificity = TN/(TN+FP)
-  sensitivity = TP/(TP+FN)
-  
-  r = (c(sensitivity, specificity))
-  names(r) = c("Sensitivity", "Specificity")
-  return(r)
-}
-
+#' Internal function to print info string
 info<-function(string) {
   print(paste0("[INFO]:", string))
 }
 
+#' Internal function to normalize by library size
 normalise_by_factor<-function(counts, factor) { 
   t(t(counts)/factor)
 }
-
-
-get_file_name_ext<-function(path) {
-  split<-strsplit(path, "/")
-  split<-split[[1]]
-  return (split[length(split)]) 
-}
-
-
-get_file_name_no_ext<-function(path) {
-  file_name<-get_file_name_ext(path)
-  file_name<-gsub("\\..*", "", file_name)
-  return (file_name) 
-}
-spec = matrix(
-  c("input"  , "i", 1, "character",
-    "input_labels"  , "l", 1, "character",
-    "output", "o", 1, "character"), 
-  byrow=TRUE, ncol=4);
-opt = getopt(spec);
-
-input=opt$input
-input_labels=opt$input_labels
-output=opt$output
-
-
 
 ################################################################################
 ###############################TRAINING DATA RAW COUNTS####################################
 ################################################################################
 
-
 output_dir="/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/"
 GO_terms_input="/Users/ti1/Google\ Drive/projects/quality_control/tables/biological_features.txt"
 extra_genes_input="/Users/ti1/Google\ Drive/projects/quality_control/tables/extra_genes.txt"
 common_features_input="/Users/ti1/Google Drive/projects/quality_control/tables/common_features.txt"
+
+
+#LOAD ALL DATA
+GO_terms<-read.table(GO_terms_input, header=FALSE, stringsAsFactors=FALSE)
+extra_genes=read.table(extra_genes_input, header=FALSE, stringsAsFactors=FALSE, fill=TRUE)
+common_features=unlist(read.table(common_features_input, header=FALSE, stringsAsFactors=FALSE, sep=","))
+extra_genes=apply(extra_genes, 1, function(x){
+  return(subset(x, x != ""))
+})
 
 
 input="/Users/ti1/Google\ Drive/projects/quality_control/data/original_labels/ola_mES/ola_mES.sorted.txt"
@@ -451,56 +461,23 @@ counts_ercc<-data[ercc_i,]
 ercc=colSums(counts_ercc)
 ht_seq_features= t(data_qual[c(1, 2),])
 
-
-read_metrics=read_metrics[,c(2,3,5,6)]
 read_metrics = cbind(read_metrics, ht_seq_features, ercc)
 counts<-data[-c(ercc_i,qual_i),]
 genes=rownames(counts)
 
 counts_nm<-data.frame(normalise_by_factor(counts, colSums(counts)))
-
+rownames(counts_nm)=genes
 output_dir="/Users/ti1/Google Drive/projects/quality_control/data/23_11_15"
 file_name=paste0(file_name, "_raw_counts")
-common_feature_names=c("Mapped reads %", "Non-exon reads %", "Multi-mapped reads %", "Transcriptome variance", "Cytoplasm %", "mtDNA %", "Mitochondria %")
-all_feature_names= c("Total reads", "Mapped reads %", "Multi-mapped reads %", "Non-exon reads%", "Ambigious genes %", "ERCC ratio", "# detected genes", "Transcriptome variance",
-                     "Highly variable Int.1", "Highly variable Int.2", "Highly variable Int.3", "Highly variable Int.4", "Highly variable Int.5", 
-                     "#Highly expressed", "Apoptosis %", "Metablosim %", "Ribosomes %", "Membrane %", "Cytoplasm %", "Extracellular region %", "mtDNA", "Mitochondria upreg. %", "Mitochondria downreg. %", "Actb %", "Gadph%")
 
-features=(extract_features(read_metrics, counts_nm, genes, file_name,output_dir , common_features_input, GO_terms_input, extra_genes_input, "human"))
+features=extract_features(counts_nm, read_metrics, file_name, output_dir , common_features, GO_terms, extra_genes, "mouse")
 
 quality_PCA = asses_cell_quality_PCA(features[[1]], paste0(output_dir, "/", file_name), paste0(file_name, "_all_features"))
 quality_PCA = asses_cell_quality_PCA(features[[2]], paste0(output_dir, "/", file_name), paste0(file_name, "_common_features"))
 
-labels_old=read.table("/Users/ti1/Google Drive/projects/quality_control/data/2_7/ola_mES/re-labeling/labels_and_names_detailed_ola_mES_outliers_uni2_i.txt", header=TRUE)
-labels_original=read.table("/Users/ti1/Google\ Drive/projects/quality_control/data/original_labels/ola_mES/labels_and_names_detailed_ola_mES.txt", header=TRUE)
-
-#missed by new
-labels_old=labels_old[order(labels_old[,1]),]
-quality_PCA=quality_PCA[order(quality_PCA[,1]),]
-labels_original=labels_original[order(labels_original[,1]),]
-
-
-differnt_than_origin=quality_PCA[-which(quality_PCA[,2]==as.character(labels_original[,2])),]
-differnt_than_origin_good_to_bad=differnt_than_origin[which(differnt_than_origin[,2]==0),1]
-labels_new = labels_original
-labels_new[,3]=as.character(labels_original[,3])
-labels_new[which(labels_original[,1] %in% differnt_than_origin_good_to_bad), 3]="S"
-labels_new[which(labels_original[,1] %in% differnt_than_origin_good_to_bad), 2]=0
-
-table(quality_PCA[which(quality_PCA[,2]==as.character(labels_original[,2])),2])[1]/78
-table(quality_PCA[which(quality_PCA[,2]==as.character(labels_original[,2])),2])[2]/882
-
-table(labels_new[,3])
-table(labels_original[,3])
-
 ################################################################################
 ###############################TRAINING DATA CUFFLINKS SUPPLEMENT####################################
 ################################################################################
-
-output_dir="/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/"
-GO_terms_input="/Users/ti1/Google\ Drive/projects/quality_control/tables/biological_features.txt"
-extra_genes_input="/Users/ti1/Google\ Drive/projects/quality_control/tables/extra_genes.txt"
-common_features_input="/Users/ti1/Google Drive/projects/quality_control/tables/common_features.txt"
 
 # MERGE ALL FPKM COUNTS AND TRANSFORM THEM TO TPM
 # fpkmToTpm <- function(fpkm)
@@ -566,41 +543,9 @@ read_metrics=read.table(input, sep=",", header=TRUE)
 read_metrics=read_metrics[which(read_metrics[,1] %in% colnames(data)),]
 read_metrics=read_metrics[order((read_metrics[,1])),]
 
-file_name<-get_file_name_no_ext(input)
-
-ercc_i<-grep("ERCC", rownames(data))
-ercc_s<-as.character(rownames(data)[ercc_i])
-counts_ercc<-data[ercc_i,]
-ercc=colSums(counts_ercc)
-
-read_metrics=read_metrics[,c(2,3,5,6)]
-read_metrics = cbind(read_metrics, ercc)
+file_name<-get_file_name_no_ext("/Users/ti1/Google\ Drive/projects/quality_control/data/original_labels/ola_mES/ola_mES_cufflinks.counts")
 counts_nm=data
-genes=rownames(counts_nm)
-
-features=(extract_features(read_metrics, counts_nm, genes, paste0(file_name, "_cufflinks"), "/Users/ti1/Google Drive/projects/quality_control/data/23_11_15", common_features_input, GO_terms_input, extra_genes_input))
-quality_PCA = asses_cell_quality_PCA(features[[1]], paste0(output_dir, "/", file_name))
-#quality_PCA = asses_cell_quality_PCA(features[[2]], paste0(output_dir, "/", file_name))
-
-
-
-#missed by new
-quality_PCA=quality_PCA[order(quality_PCA[,1]),]
-labels_original=labels_original[order(labels_original[,1]),]
-
-differnt_than_origin=quality_PCA[-which(quality_PCA[,2]==as.character(labels_original[,2])),]
-differnt_than_origin_good_to_bad=differnt_than_origin[which(differnt_than_origin[,2]==0),1]
-labels_new = labels_original
-labels_new[,3]=as.character(labels_original[,3])
-labels_new[which(labels_original[,1] %in% differnt_than_origin_good_to_bad), 3]="S"
-labels_new[which(labels_original[,1] %in% differnt_than_origin_good_to_bad), 2]=0
-
-table(quality_PCA[which(quality_PCA[,2]==as.character(labels_original[,2])),2])[1]/78
-table(quality_PCA[which(quality_PCA[,2]==as.character(labels_original[,2])),2])[2]/882
-
-table(labels_new[,3])
-table(labels_original[,3])
-
+features=extract_features(counts_nm, read_metrics, paste0(file_name, "_cufflinks"), "/Users/ti1/Google Drive/projects/quality_control/data/23_11_15", common_features, GO_terms, extra_genes, "mouse")
 
 ################################################################################
 ###############################HUMAN SUPPLEMENT DATA############################
@@ -609,7 +554,7 @@ genes_expr<-list.files(path = "/Users/ti1/Google\ Drive/projects/quality_control
                        full.names = TRUE, recursive = TRUE)
 stats<-list.files(path = "/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/", pattern = ".*\\.stats$", all.files = FALSE,
                   full.names = TRUE, recursive = TRUE)
-extra_genes_human_input="/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/extra_genes_humans.txt"
+extra_genes_human_input="/Users/ti1/Google Drive/projects/quality_control/tables/extra_genes_humans.txt"
 output_dir="/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/"
 
 
@@ -634,34 +579,75 @@ features_data_sets=sapply(1:length(genes_expr), function(x){
   ercc=colSums(counts_ercc)
   ht_seq_features= t(data_qual[c(1, 2),])
   
-  read_metrics=read_metrics[,c(2,3,5,6)]
   read_metrics = cbind(read_metrics, ht_seq_features, ercc)
   counts<-data[-c(ercc_i,qual_i),]
   genes=rownames(counts)
   counts_nm<-data.frame(normalise_by_factor(counts, colSums(counts)))
   
+  #LOAD ALL DATA
+  GO_terms<-read.table(GO_terms_input, header=FALSE, stringsAsFactors=FALSE)
+  extra_genes_human=read.table(extra_genes_human_input, header=FALSE, stringsAsFactors=FALSE, fill=TRUE)
+  common_features=unlist(read.table(common_features_input, header=FALSE, stringsAsFactors=FALSE, sep=","))
+  extra_genes_human=apply(extra_genes_human, 1, function(x){
+    return(subset(x, x != ""))
+  })
   
-  features=(extract_features(read_metrics, counts_nm, genes, file_name, output_dir, common_features_input, GO_terms_input, extra_genes_human_input, "human"))
+  
+  features=extract_features(counts_nm, read_metrics, file_name, output_dir, common_features, GO_terms, extra_genes_human, "human")
   all=features[[1]]
   common=features[[2]]
-  
-  colnames(all)=all_feature_names
-  colnames(common)=common_feature_names
-  quality_PCA = asses_cell_quality_PCA(all, paste0(output_dir, "/",file_name), paste0(file_name, "_all"))
-  
   return(features)
 }, simplify=FALSE)
 
 
-combined=rbind(features_data_sets[[1]][[2]], features_data_sets[[2]][[2]])
-
-
+#CHECK IF SVM PREDICTS HUMAN CELLS
 training_set_common_features=read.table("/Users/ti1/Google Drive/projects/quality_control/data/23_11_15/ola_mES_raw_counts/ola_mES_raw_counts.common.features", header=TRUE)
 training_set_all_features=read.table("/Users/ti1/Google Drive/projects/quality_control/data/23_11_15/ola_mES_raw_counts/ola_mES_raw_counts.all.features", header=TRUE)
 training_set_labels=read.table("/Users/ti1/Google Drive/projects/quality_control/data/30_12/ola_mES/pre_clustering/ola_mES_no_corr_features/labels_and_names_detailed_ola_mES_pca.txt", header=TRUE)
 paramaters_core<-read.table("/Users/ti1/Google\ Drive/projects/quality_control/data/20_11/ola_mES/model_ensemble_param_generic_pca_no_corr_features/ola_mES_generic.ensemble_parameters_boost.txt")
 
 
+training_set_labels=training_set_labels[order(training_set_labels[,1]),]
+quake_common=read.table("/Users/ti1/Google Drive/projects/quality_control/data/not_annotated_data/quake_smart_13_HTSeq-0_6_1/quake_smart_13_HTSeq-0_6_1.common.features", header=TRUE)
+quake_all=read.table("/Users/ti1/Google Drive/projects/quality_control/data/not_annotated_data/quake_smart_13_HTSeq-0_6_1/quake_smart_13_HTSeq-0_6_1.all.features", header=TRUE)
 
-quality_SVM = asses_cell_quality_SVM(training_set_common_features, training_set_labels, features_data_sets[[1]][[2]], paramaters_core, output_dir)
 
+ramskold_common=read.table("/Users/ti1/Google Drive/projects/quality_control/data/not_annotated_data/ramskold_2012_cancer_HTSeq-0_6_1/ramskold_2012_cancer_HTSeq-0_6_1.common.features", header=TRUE)
+ramskold_all=read.table("/Users/ti1/Google Drive/projects/quality_control/data/not_annotated_data/ramskold_2012_cancer_HTSeq-0_6_1/ramskold_2012_cancer_HTSeq-0_6_1.all.features", header=TRUE)
+output_dir="/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/"
+
+
+quality_PCA_rams = asses_cell_quality_PCA(ramskold_all, paste0(output_dir, "/","ramskold_2012_cancer_HTSeq-0_6_1"), paste0("ramskold_2012_cancer_HTSeq-0_6_1", "_all"))
+quality_PCA_quake = asses_cell_quality_PCA(quake_all, paste0(output_dir, "/","quake_smart_13_HTSeq-0_6_1"), paste0("quake_smart_13_HTSeq-0_6_1", "_all"))
+
+
+combined=rbind(quake_common, ramskold_common, training_set_common_features)
+
+pca<-prcomp(combined, scale=TRUE, center=TRUE)
+pca_var_explained=summary(pca)
+
+data_frame<-data.frame(type=c(rep("human1", nrow(quake_common)), rep("human2", nrow(ramskold_common)), training_set_labels[,2]), pca$x)  
+col=c("0" = "red","1" = "darkgreen")
+
+plot<-ggplot(data_frame, aes(x=PC1, y=PC2), size=1) + geom_point(aes(colour=type)) + theme_bw()  + theme(axis.line=element_blank(),
+                                                                                                 axis.text.x=element_text(),axis.text.y=element_text(),
+                                                                                                 axis.ticks.length = unit(0, "mm"),
+                                                                                                 axis.title.x=element_blank(),
+                                                                                                 axis.title.y=element_blank(),
+                                                                                                 legend.position="none",
+                                                                                                 panel.background=element_blank(),
+                                                                                                 panel.border= element_rect(fill=NA,color="black", 
+                                                                                                                            linetype="solid"),
+                                                                                                 panel.grid.major=element_blank(),
+                                                                                                 panel.grid.minor=element_blank(),
+                                                                                                 plot.background=element_blank()) 
+
+ggsave(paste0(output_dir, "/human_and_mouse_cancer_cells.pdf"), plot, width = 80, height = 90, units="mm")
+
+#PREDICT FROM MOUSE TO QUAKE CELLS
+quality_SVM=asses_cell_quality_SVM(training_set_common_features[, -c(4,5)], training_set_labels[,2], quake_common[, -c(4,5)], paramaters_core)
+length(which((quality_PCA_quake[,2]==quality_SVM[,2])==TRUE))/96
+
+#PREDICT FROM MOUSE TO RAMSKOLD CELLS
+quality_SVM=asses_cell_quality_SVM(training_set_common_features[, -c(4,5)], training_set_labels[,2], ramskold_common[, -c(4,5)], paramaters_core)
+length(which((quality_PCA_rams[,2]==quality_SVM[,2])==TRUE))/18
