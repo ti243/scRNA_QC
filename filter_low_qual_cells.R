@@ -183,7 +183,7 @@ asses_cell_quality_SVM<-function(training_set_features, training_set_labels, tes
   final_results<-sapply(1:nrow(ensemble_param), function(x) {
     parameters<-ensemble_param[x,]
     weights <- table(data_set$l) 
-    weights[1]<-3
+    weights[1]<-parameters[3]
     weights[2] <- 1
     kernel<-"radial"
     
@@ -254,7 +254,7 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
     feature=test_set_features[,f]
     df=data.frame(counts=log(feature+0.0001), type=types)
     plot<-ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
-                                                                                                                                                                                             axis.text.x=element_blank(),axis.text.y=element_blank(),
+                                                                                                                                                                                             axis.text.x=element_blank(),axis.text.y=element_text(size=text_size),
                                                                                                                                                                                              axis.ticks.length = unit(0, "mm"),
                                                                                                                                                                                              axis.title.x=element_blank(),
                                                                                                                                                                                              axis.title.y=element_blank(),
@@ -280,7 +280,7 @@ asses_cell_quality_PCA<-function(test_set_features, output_dir, prefix) {
     feature=test_set_features[,f]
     df=data.frame(counts=log(feature+0.0001), type=types)
     plot<-ggplot(df, aes(x=type)) + geom_boxplot(aes(colour=factor(type), y = counts), trim=TRUE, alpha=0.3, adjust=1, size=size, outlier.size = 0) +ggtitle(names[f]) + theme_bw()  + theme(axis.line=element_blank(),
-                                                                                                                                                                                             axis.text.x=element_blank(),axis.text.y=element_blank(),
+                                                                                                                                                                                             axis.text.x=element_blank(),axis.text.y=element_text(size=text_size),
                                                                                                                                                                                              axis.ticks.length = unit(0, "mm"),
                                                                                                                                                                                              axis.title.x=element_blank(),
                                                                                                                                                                                              axis.title.y=element_blank(),
@@ -419,6 +419,10 @@ output=opt$output
 ###############################TRAINING DATA RAW COUNTS####################################
 ################################################################################
 
+common_feature_names=c("Mapped reads %", "Non-exon reads %", "Multi-mapped reads %", "Transcriptome variance", "Cytoplasm %", "mtDNA %", "Mitochondria %")
+all_feature_names= c("Total reads", "Mapped reads %", "Multi-mapped reads %", "Non-exon reads%", "Ambigious genes %", "ERCC ratio", "# detected genes", "Transcriptome variance",
+                     "Highly variable Int.1", "Highly variable Int.2", "Highly variable Int.3", "Highly variable Int.4", "Highly variable Int.5", 
+                     "#Highly expressed", "Apoptosis %", "Metablosim %", "Ribosomes %", "Membrane %", "Cytoplasm %", "Extracellular region %", "mtDNA", "Mitochondria upreg. %", "Mitochondria downreg. %", "Actb %", "Gadph%")
 
 output_dir="/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/"
 GO_terms_input="/Users/ti1/Google\ Drive/projects/quality_control/tables/biological_features.txt"
@@ -461,12 +465,8 @@ counts_nm<-data.frame(normalise_by_factor(counts, colSums(counts)))
 
 output_dir="/Users/ti1/Google Drive/projects/quality_control/data/23_11_15"
 file_name=paste0(file_name, "_raw_counts")
-common_feature_names=c("Mapped reads %", "Non-exon reads %", "Multi-mapped reads %", "Transcriptome variance", "Cytoplasm %", "mtDNA %", "Mitochondria %")
-all_feature_names= c("Total reads", "Mapped reads %", "Multi-mapped reads %", "Non-exon reads%", "Ambigious genes %", "ERCC ratio", "# detected genes", "Transcriptome variance",
-                     "Highly variable Int.1", "Highly variable Int.2", "Highly variable Int.3", "Highly variable Int.4", "Highly variable Int.5", 
-                     "#Highly expressed", "Apoptosis %", "Metablosim %", "Ribosomes %", "Membrane %", "Cytoplasm %", "Extracellular region %", "mtDNA", "Mitochondria upreg. %", "Mitochondria downreg. %", "Actb %", "Gadph%")
 
-features=(extract_features(read_metrics, counts_nm, genes, file_name,output_dir , common_features_input, GO_terms_input, extra_genes_input, "human"))
+features=(extract_features(read_metrics, counts_nm, genes, file_name,output_dir , common_features_input, GO_terms_input, extra_genes_input, "mouse"))
 
 quality_PCA = asses_cell_quality_PCA(features[[1]], paste0(output_dir, "/", file_name), paste0(file_name, "_all_features"))
 quality_PCA = asses_cell_quality_PCA(features[[2]], paste0(output_dir, "/", file_name), paste0(file_name, "_common_features"))
@@ -647,7 +647,9 @@ features_data_sets=sapply(1:length(genes_expr), function(x){
   
   colnames(all)=all_feature_names
   colnames(common)=common_feature_names
+  
   quality_PCA = asses_cell_quality_PCA(all, paste0(output_dir, "/",file_name), paste0(file_name, "_all"))
+  
   
   return(features)
 }, simplify=FALSE)
@@ -656,12 +658,56 @@ features_data_sets=sapply(1:length(genes_expr), function(x){
 combined=rbind(features_data_sets[[1]][[2]], features_data_sets[[2]][[2]])
 
 
+#CHECK IF SVM PREDICTS HUMAN CELLS
 training_set_common_features=read.table("/Users/ti1/Google Drive/projects/quality_control/data/23_11_15/ola_mES_raw_counts/ola_mES_raw_counts.common.features", header=TRUE)
 training_set_all_features=read.table("/Users/ti1/Google Drive/projects/quality_control/data/23_11_15/ola_mES_raw_counts/ola_mES_raw_counts.all.features", header=TRUE)
 training_set_labels=read.table("/Users/ti1/Google Drive/projects/quality_control/data/30_12/ola_mES/pre_clustering/ola_mES_no_corr_features/labels_and_names_detailed_ola_mES_pca.txt", header=TRUE)
 paramaters_core<-read.table("/Users/ti1/Google\ Drive/projects/quality_control/data/20_11/ola_mES/model_ensemble_param_generic_pca_no_corr_features/ola_mES_generic.ensemble_parameters_boost.txt")
 
 
+training_set_labels=training_set_labels[order(training_set_labels[,1]),]
+quake_common=read.table("/Users/ti1/Google Drive/projects/quality_control/data/not_annotated_data/quake_smart_13_HTSeq-0_6_1/quake_smart_13_HTSeq-0_6_1.common.features", header=TRUE)
+quake_all=read.table("/Users/ti1/Google Drive/projects/quality_control/data/not_annotated_data/quake_smart_13_HTSeq-0_6_1/quake_smart_13_HTSeq-0_6_1.all.features", header=TRUE)
 
-quality_SVM = asses_cell_quality_SVM(training_set_common_features, training_set_labels, features_data_sets[[1]][[2]], paramaters_core, output_dir)
 
+ramskold_common=read.table("/Users/ti1/Google Drive/projects/quality_control/data/not_annotated_data/ramskold_2012_cancer_HTSeq-0_6_1/ramskold_2012_cancer_HTSeq-0_6_1.common.features", header=TRUE)
+ramskold_all=read.table("/Users/ti1/Google Drive/projects/quality_control/data/not_annotated_data/ramskold_2012_cancer_HTSeq-0_6_1/ramskold_2012_cancer_HTSeq-0_6_1.all.features", header=TRUE)
+output_dir="/Users/ti1/Google\ Drive/projects/quality_control/data/not_annotated_data/"
+
+colnames(ramskold_all)=all_feature_names
+colnames(quake_all)=all_feature_names
+
+combined=rbind(quake_common, ramskold_common, training_set_common_features)
+
+quality_PCA = asses_cell_quality_PCA(ramskold_all, paste0(output_dir, "/","ramskold_2012_cancer_HTSeq-0_6_1"), paste0("ramskold_2012_cancer_HTSeq-0_6_1", "_all"))
+quality_PCA = asses_cell_quality_PCA(quake_all, paste0(output_dir, "/","quake_smart_13_HTSeq-0_6_1"), paste0("quake_smart_13_HTSeq-0_6_1", "_all"))
+
+
+
+pca<-prcomp(combined, scale=TRUE, center=TRUE)
+pca_var_explained=summary(pca), training_set_labels[,2]
+data_frame<-data.frame(type=c(rep("human1", nrow(common)), rep("human2", nrow(common_human_train))), pca$x)  
+col=c("0" = "red","1" = "darkgreen")
+
+plot<-ggplot(data_frame, aes(x=PC1, y=PC2)) + geom_point(aes(colour=type)) + theme_bw()  + theme(axis.line=element_blank(),
+                                                                                                 axis.text.x=element_text(),axis.text.y=element_text(),
+                                                                                                 axis.ticks.length = unit(0, "mm"),
+                                                                                                 axis.title.x=element_blank(),
+                                                                                                 axis.title.y=element_blank(),
+                                                                                                 legend.position="none",
+                                                                                                 panel.background=element_blank(),
+                                                                                                 panel.border= element_rect(fill=NA,color="black", 
+                                                                                                                            linetype="solid"),
+                                                                                                 panel.grid.major=element_blank(),
+                                                                                                 panel.grid.minor=element_blank(),
+                                                                                                 plot.background=element_blank()) 
+
+ggsave(paste0(output_dir, "/human_and_mouse_cancer_cells.pdf"), plot)
+
+quality_PCA = asses_cell_quality_PCA(quake_common, paste0(output_dir, "/",file_name), "test")
+quality_SVM=asses_cell_quality_SVM(quake_common[, -c(2,5,6,7)], quality_PCA, ramskold_common[, -c(2,5,6,7)], paramaters_core, output_dir)
+quality_PCA = asses_cell_quality_PCA(ramskold_all, paste0(output_dir, "/",file_name), paste0(file_name, "_all"))
+intersect(which(quality_PCA[,2]=="0"),which(quality_SVM==0))
+
+length(which(quality_PCA[,2]=="0"))
+length(which(quality_SVM==0))
