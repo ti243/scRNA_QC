@@ -114,19 +114,20 @@ def run(args):
     logging.info("Pipeline is done.")
     return code
 
-def write_stats(sample_name,files_process_index, stats_root, mapping_root, cluster):
+def write_stats(used_genome, sample_name,files_process_index, stats_root, mapping_root, cluster, overwrite):
 
+    GTF = ConfigSectionMap("DIRECTORIES")['ref_dir'] + used_genome + "/" +  used_genome + ConfigSectionMap("EXTENSIONS")['ext_gtf']
     log_file = stats_root + "/stats.%I.log"
     sorted_sam_files = mapping_root + "/sam/" + sample_name + "_{#}" + ConfigSectionMap("EXTENSIONS")['ext_sam']
-    _write_mapping_stats(files_process_index, sorted_sam_files, stats_root, sample_name, log_file, cluster)
+    _write_mapping_stats(GTF, files_process_index, sorted_sam_files, stats_root, sample_name, log_file, cluster, overwrite)
 
-def _write_mapping_stats(files_process_index, sorted_sam_files,  stats_root, sample_name, log_file, cluster):
+def _write_mapping_stats(GTF_file, files_process_index, sorted_sam_files,  stats_root, sample_name, log_file, cluster, overwrite):
 
 
     stats_output_merged = stats_root + "/" + sample_name + ".stats"
     logging.info("Generating mapping statistics.")
     expected_output_stats = list_expected_output(files_process_index, ".stats", stats_root, sample_name)
-    if(pre_checks(expected_output_stats) == True):
+    if(overwrite == False and pre_checks(expected_output_stats) == True):
         return (0)
     stats_output = stats_root + "/" + sample_name + "_{#}.stats"
 
@@ -138,6 +139,8 @@ def _write_mapping_stats(files_process_index, sorted_sam_files,  stats_root, sam
     commands.append(stats_output)
     commands.append("-n")
     commands.append(sample_name + "_{#}.counts")
+    commands.append("-g")
+    commands.append(GTF_file)
 
     code = execute(files_process_index, commands, log_file, cluster)
 
@@ -151,7 +154,7 @@ def _write_mapping_stats(files_process_index, sorted_sam_files,  stats_root, sam
         s += "S_"+str(i) + ","
     s += "S_10+"
 
-    commands.append("cell,total,mapped,unmapped,unique,multi,perfect,partly_perfect,mapped_no_correct,"+s+",I,D,INDEL")
+    commands.append("cell,total,mapped,unmapped,unique,multi,intergenic,intragenic,exonic,intronic,ambigious,exonicM,alignments,multi-intergenic,multi-intragenic,multi-exonic,multi-intronic,multi-ambigious,perfect,partly_perfect,mapped_no_correct,"+s+",I,D,INDEL")
     commands.append(">")
     commands.append(stats_output_merged)
     proc = subprocess.Popen(" ".join(commands), stdout=subprocess.PIPE, shell=True)
@@ -200,7 +203,6 @@ def _run_quantification(quantifier, counts_dir, mapping_root, sample_name, files
     quant_output_dir = counts_dir + "/" + quantifier.replace(".", "_") 
     expected_output_counts = list_expected_output(files_process_index, ConfigSectionMap("EXTENSIONS")['ext_counts'], quant_output_dir, sample_name)
     output_file = quant_output_dir + "/" + sample_name + "_" + quantifier.replace(".", "_")  + ConfigSectionMap("EXTENSIONS")['ext_counts']
-#    merge_cuff(expected_output_counts, output_file) 
     #If doesn't exist, create dir and run
     if(pre_checks(expected_output_counts) == False or overwrite == True):
         make_dir(quant_output_dir)
@@ -222,10 +224,11 @@ def _run_quantification(quantifier, counts_dir, mapping_root, sample_name, files
         #Run selected quantification tool
         if("HTSeq" in quantifier):
             code = execute_htseq(sample_name,quantifier, quant_args, genome, sorted_bam_files, output_counts, files_process_index, log_file, cluster)
+            merge(expected_output_counts, output_file,[1, -1])
         elif("cufflinks" in quantifier):
             code = 0
             code = execute_cufflink(sample_name, quantifier, quant_args, genome, sorted_bam_files, quant_output_dir, output_counts, files_process_index, log_file, cluster)
-            merge_cuff(expected_output_counts, output_file)
+            merge(expected_output_counts, output_file,[9], 1)
         #Return code
         if(code != 0): 
             logging.error("Please check log files for more information: "+ quant_output_dir)
@@ -233,16 +236,19 @@ def _run_quantification(quantifier, counts_dir, mapping_root, sample_name, files
             return 1    
         else:
             output_file = quant_output_dir + "/" + sample_name + "_" + quantifier.replace(".", "_")  + ConfigSectionMap("EXTENSIONS")['ext_counts']
-       #     merge(expected_output_counts, output_file)    
     
     #Return code
     return 0
 
-def merge_cuff(files, output_file):
+def merge(files, output_file, columns_list, skip_row_i):
 
-    row_names = 1
-    columns = [9]
-    data = pd.read_table(files[0], skiprows=1)
+    #COLUMNS TO EXTRACT FROM FILE
+    columns = columns_list
+    #SKIP ROW
+    if (skip_row_i != -1):
+        data = pd.read_table(files[0], skiprows=skip_row_i)
+    else:
+        data = pd.read_table(files[0], header=None)
     d = data.iloc[:, columns]
     row_names = data.iloc[:,0]
     merged = pd.DataFrame(d)
@@ -253,7 +259,13 @@ def merge_cuff(files, output_file):
         f = files[i]
         file_name =  os.path.basename(f)
         file_names.append(file_name)
-        data = pd.read_table(f, skiprows=1)
+
+
+        if (skip_row_i != -1):
+            data = pd.read_table(f, skiprows=skip_row_i)
+        else:
+            data = pd.read_table(f, header=None)
+
         d = data.iloc[:, columns]
         merged = pd.concat([merged,d], axis=1)
 
@@ -347,8 +359,9 @@ def run_mapping(mapper,mapping_args, mapping_root, stats_root, sample_name, file
     code = (_run_mapping_all_steps(mapper,map_args, genome, files_index_holder, files_process_index, paired, read_length, mapping_root, sample_name, cluster, overwrite))
 
 
-    make_dir(stats_root)
-    write_stats(sample_name, files_process_index, stats_root, mapping_root, args.cluster)
+    if (code == 0):
+        make_dir(stats_root)
+        write_stats(genome, sample_name, files_process_index, stats_root, mapping_root, args.cluster, overwrite)
     
     return(code)
 #TOP LEVEL FUNCTION TO CREATE REF GENOME INDEX FILES
@@ -552,7 +565,7 @@ def exec_star_mapping(mapper, mapper_args, read_length, used_genome, files_index
     genome_dir =  ConfigSectionMap("DIRECTORIES")['ref_dir'] + used_genome + "/" + mapper
     code = 0
     commands = []
-
+    GTF = ConfigSectionMap("DIRECTORIES")['ref_dir'] + used_genome + "/" +  used_genome + ConfigSectionMap("EXTENSIONS")['ext_gtf']
     log_file1 = mapping_dir + "/" + sample_name + "_%I.mapping.log"
     output_sam_file = mapping_dir + "/" + sample_name + "_{#}" + ConfigSectionMap("EXTENSIONS")['ext_sam']
     commands.append(star)
@@ -575,7 +588,15 @@ def exec_star_mapping(mapper, mapper_args, read_length, used_genome, files_index
             shutil.rmtree(f)
     commands.append("--outTmpDir")
     commands.append(TEMP)
-    commands.append(" ".join(convert_to_default_map_param(mapper_args)))
+
+    options = convert_to_default_map_param(mapper_args)
+    splice = "-splice" in options
+
+    if (splice):
+       commands.append(GTF) 
+       options.remove("-splice")
+
+    commands.append(" ".join(options))
     commands.append(">")
     commands.append(output_sam_file)
 
@@ -587,19 +608,26 @@ def exec_gmap_mapping(mapper, mapper_args, read_length, used_genome, files_index
     code = 0
     commands = [] 
    
+    fasta_size = os.stat(ConfigSectionMap("DIRECTORIES")['ref_dir'] + used_genome + "/" + used_genome + ConfigSectionMap("EXTENSIONS")['ext_fasta']).st_size
+    fasta_size_GB = fasta_size / 1024.0 /1024.0 / 1024.0
+    if (fasta_size_GB >= 5.0) :
+        gmap = ConfigSectionMap("DIRECTORIES")['tools_mapping'] + "/"+ mapper + ConfigSectionMap("SOFTWARE")['gsnapl']
     output_sam_file = mapping_dir + "/" + sample_name + "_{#}" + ConfigSectionMap("EXTENSIONS")['ext_sam'] 
     commands.append(gmap)
     commands.append("-A sam -B 5")
-    commands.append(" ".join(convert_to_default_map_param(mapper_args)))
     commands.append("-t")
     commands.append(args.cpu)
-    
+   
+    options = convert_to_default_map_param(mapper_args)
+    splice = "-splice" in options
     splice_f = genome_dir + "/" + used_genome + ConfigSectionMap("EXTENSIONS")['ext_gsnap_splice']
     #Only add splice file if not empty. Otherwise gmap results in a weired error
-    if(os.stat(splice_f).st_size > 0):
+    if(splice == True and os.stat(splice_f).st_size > 0):
         commands.append("-s")
         commands.append(genome_dir + "/" + used_genome)
-    
+        options.remove("-splice") 
+
+    commands.append(" ".join(options))
     commands.append("-d") 
     commands.append(used_genome)
     commands.append("-D")
@@ -862,8 +890,14 @@ def exec_tophat_mapping(mapper, mapper_args, read_length, used_genome, files_ind
     #commands.append("--no-convert-bam")
     commands.append("-p")
     commands.append(args.cpu)
-    commands.append("--transcriptome-index " + used_genome_dir+"/transcriptome_data/known")
-    commands.append(" ".join(convert_to_doublets_map_param(mapper_args)))
+
+    options = convert_to_doublets_map_param(mapper_args)
+    splice = "--splice" in options
+    
+    if (splice):
+        options.remove("--splice")
+        commands.append("--transcriptome-index " + used_genome_dir+"/transcriptome_data/known")
+    commands.append(" ".join(options))
 
     commands.append(used_genome)
     commands.append(" ".join(files_index_holder))
@@ -1055,51 +1089,6 @@ def find(pattern, path):
             if fnmatch.fnmatch(name, pattern):
                 result.append(os.path.join(root, name))
     return result
-
-#RETURNS A NUMPY MATRIX (GENES (ROWS) x CELLS (COLUMNS))
-#SAVES RAW MERGED FILE
-def merge(files, output_file):
-    logging.info("Merging counts to:" + output_file)
-    cell_name = ""
-    counts = []
-
-    #INIT EMPTY ARRAYS
-    genes = numpy.empty(1)
-
-    #SPECIFICY HEADER
-    #header = numpy.I#array(["Genes"])
-    files.sort()
-    header = []
-    #header.append("Genes")
-    for i in range(0, len(files)):
-        file = files[i]
-        path=file.split("/")
-        cell_number = path[len(path)-1]
-        cell_name = path[len(path)-4] + "." + cell_number
-        matrix = numpy.genfromtxt(file, dtype = 'str')
-      #  print cell_name
-        #APPEND CELL TO MATRIX AND FILENAME TO HEADER
-        if matrix.size:
-            counts.append(matrix[:,1])
-            header.append(cell_name)
-        if (i == 0):
-            genes = matrix[:,0]
-
-    num_genes = 0
-    num_cells = 0
-
-    #IF MATRIX IS NOT EMPTY
-    if (len(counts) > 0):
-      
-     #   print genes.shape
-        counts = numpy.asarray(counts)
-        counts = counts.T
-        #print counts.shape
-        df = pd.DataFrame(counts, index=genes, columns=header)
-        df.to_csv(output_file + ".txt", index=True, header=True, sep='\t')
-        return (df)
-    else:
-        return (0)
 
 
 #FUNCTION THAT EXECUTES COMMAND ONTO CLUSTER
