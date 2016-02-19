@@ -56,11 +56,13 @@ def generate_mapping_stats(input_file, output_file, gtf_file, sample_name, count
     #Dict indicating to which genes a specific read maps to
     #It is a temporary dict
     reads_mapped_to = defaultdict(str)
+    exonic_mappings_temp = defaultdict(str)
     #Dict indicating which read is multi-mapped
     #It is a temporary dict
     multi_maps = defaultdict(str)
     sam_files = [input_file]
-    exonic_maps = Counter()
+    exonic_multi_table = defaultdict(str)
+    exonic_vs_intronic = defaultdict(str)
 
     #MAPPABILITY
     output_table["total"] = 0 
@@ -100,6 +102,7 @@ def generate_mapping_stats(input_file, output_file, gtf_file, sample_name, count
     reads = Counter()
     multi_reads = defaultdict(str)
 
+    exonic_multi_output = open(output_file+".exonic",'w')    
     #SAM PARSE SAM FILE
     for sam in sam_files:
         print("Parsing sam file...")
@@ -120,7 +123,7 @@ def generate_mapping_stats(input_file, output_file, gtf_file, sample_name, count
                     num = 0
                     error_table = defaultdict(int)
                     name_and_flag = read_name
-
+                    
                     #CHECK IF READ MAPPED OR UNMAPPED 
                     #IT US UNMAPPED
                     if(flagCode & 0x0004 != 0):
@@ -137,32 +140,43 @@ def generate_mapping_stats(input_file, output_file, gtf_file, sample_name, count
                     
                         # CHECK TO WHICH GENE(S) IT MAPPED TO
                         genes_info, num_genes, num_exons = get_gene(gtf_dict, [chrom, pos])                           
-                        #GENE COUNTS: only NON-overlapping genes
-                       # count_genes(genes_info, reads_mapped_to, read_name)
-                        if (count and num_genes== 1):
+                        #GENE COUNTS: only NON-overlapping genes and if read within exons
+                        if (count and num_genes == 1 and num_exons > 0):
                           info = genes_info[0]                            
                           gene_id = info[4]
                           mapped_to = []
-                          if (read_name in reads_mapped_to):
-                              mapped_to = reads_mapped_to[read_name]
+                          if (name_and_flag in reads_mapped_to):
+                              mapped_to = reads_mapped_to[name_and_flag]
                           mapped_to.append(gene_id)
-                          reads_mapped_to[read_name] = mapped_to
+                          reads_mapped_to[name_and_flag] = mapped_to
+
                         output_table["alignments"] += 1.0
                         #STATS
-                        if(read_name not in reads):
+                        if(name_and_flag not in reads):
                             reads[name_and_flag] += 1
                             output_table["unique"] += 1
                             output_table["total"] += 1
                             output_table["mapped"] += 1
+                            
+                            if (name_and_flag not in exonic_vs_intronic):
+                                exonic_vs_intronic[name_and_flag] = [0,0]
 
                             if(num_genes == 0):
                                 output_table["intergenic"] += 1
+                                exonic_vs_intronic[name_and_flag][1] += 1
                             elif (num_genes == 1):
                                 output_table["intragenic"] += 1
                                 if (num_exons==0):
                                     output_table["intronic"] += 1
+                                    exonic_vs_intronic[name_and_flag][1] += 1
                                 else:
                                     output_table["exonic"] += 1 
+                                    d = []
+                                    if (name_and_flag in exonic_mappings_temp):
+                                        d = exonic_mappings_temp[name_and_flag]
+                                    d.append([genes_info[0], chrom, pos])
+                                    exonic_mappings_temp[name_and_flag] = d
+                                    exonic_vs_intronic[name_and_flag][0] += 1
                             elif (num_genes > 1):
                                 output_table["ambigious"] += 1
     
@@ -172,19 +186,32 @@ def generate_mapping_stats(input_file, output_file, gtf_file, sample_name, count
                                 output_table["unique"] -= 1
                                 output_table["multi"] += 1
                             reads[name_and_flag] += 1
+                            d = []
+                            #GET KNOWLEDGE IF FIRST MAPPING EXONIC OR INTRONIC
+                            if (name_and_flag in exonic_mappings_temp):
+                                d = exonic_mappings_temp[name_and_flag]
                             #output_table["alignments"] += 1.0 
                             if(num_genes == 0):
                                 output_table["multi-intergenic"] +=(1)
+                                exonic_vs_intronic[name_and_flag][1] += 1
                             elif (num_genes == 1):
                                 output_table["multi-intragenic"] += (1)
                                 if (num_exons==0):
                                     output_table["multi-intronic"] += (1)
+                                    exonic_vs_intronic[name_and_flag][1] += 1
                                 else:
                                     output_table["multi-exonic"] += (1) 
-                                    exonic_maps[name_and_flag]+= 1
+                                    d.append([genes_info[0], chrom, pos])
+                                    exonic_vs_intronic[name_and_flag][0] += 1
                             elif (num_genes > 1):
                                 output_table["multi-ambigious"] += (1)
-    
+                            #IF AT LEAST ONE EXONIC ALIGNMENT
+                            if (len(d) > 0):
+                                exonic_multi_table[name_and_flag] = d 
+                                o = ""
+                                for i in d:
+                                    o = str(i[0][4]) + ","  + str(i[0][1]) + "," + str(i[0][2])  + ","+str(i[1])+","+str(i[2]) + "\n"
+                                    exonic_multi_output.write(o)
                         #PARSE MAPPING ERRORS         
                         for i in errors_a:
                             if (re.match("[0-9]",i)):
@@ -219,15 +246,22 @@ def generate_mapping_stats(input_file, output_file, gtf_file, sample_name, count
                         if("I" in error_table or "D" in error_table):
                              output_table["INDEL"] += 1
 
-   
+  
+    exonic_multi_output.close() 
     #WHEIGHT COUNTS  
     if (count):
-        counts = weight_counts(reads_mapped_to)
+        counts, counts_unique, counts_multi = weight_counts(reads_mapped_to)
+        write_counts(output_file+".counts.unique", counts_unique, sample_name)
         write_counts(output_file+".counts", counts, sample_name)
+        write_counts(output_file+".counts.multi", counts_multi, sample_name)
 
-    output_table["exonicM"] = len(exonic_maps.keys())
+    o = ""
+    exonicM = len(exonic_multi_table.keys())
+    output_table["exonicM"] = exonicM
     write_stats(output_file, output_table, sample_name)
-    
+    for i in exonic_vs_intronic.keys():
+       print(exonic_vs_intronic[i]) 
+     
 def write_stats(output_file, stats_table, o):
     #OUTPUT STATS
     f = open(output_file,'w')
@@ -265,28 +299,32 @@ def weight_counts(reads_mapped_to):
     #Only considers genes that do not have any overlapping genes
     #Considers paired-end as single ended reads
     counts = defaultdict(float)
-        
+    counts_unique = defaultdict(float)
+    counts_multi = defaultdict(float) 
     #OUTPUT GENE COUNTS
     for read in reads_mapped_to.keys():
         genes = reads_mapped_to[read]
-        #genes.append("dummy")
-        for i, g in enumerate(genes):
-                #if (len(genes) > 1):
-                counts[g] += 1.0/(len(genes)+0.0)
-    return counts
+        if (len(genes) == 1):
+            counts_unique[genes[0]] += 1.0
+            counts[genes[0]] += 1.0
+        else:
+            for i, g in enumerate(genes):
+                counts_multi[g] += 1.0
+                counts[g] += 1.0/len(genes)
+    return counts, counts_unique, counts_multi
 
 
-def count_genes(genes_info, reads_mapped_to, read_name):
+def count_genes(genes_info, reads_mapped_to, name_and_flag):
 #GENE COUNTS: only NON-overlapping genes
 
     if (len(genes_info)== 1):
         info = genes_info[0]                            
         gene_id = info[4]
         mapped_to = []
-        if (read_name in reads_mapped_to):
-            mapped_to = reads_mapped_to[read_name]
+        if (name_and_flag in reads_mapped_to):
+            mapped_to = reads_mapped_to[name_and_flag]
         mapped_to.append(gene_id)
-        reads_mapped_to[read_name] = mapped_to
+        reads_mapped_to[name_and_flag] = mapped_to
     
 
 
@@ -314,14 +352,6 @@ def get_gene(gtf_dict, pos_pair):
             num_genes+= 1
         elif (info[0] == "exon"):
             num_exons+=1
-    #READ MUST START WITHIN REGION
-    #for e in entries:
-     #   if (e[1]<= pos <= e[2]):
-      #      if(e[0] =="gene"):
-       #         num_genes+=1
-        #        found.append(e)
-         #   elif(e[0] == "exon"):
-          #      num_exons+=1
     return([list, num_genes, num_exons])
 
 def main(argv):    

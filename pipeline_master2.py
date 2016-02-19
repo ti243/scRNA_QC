@@ -127,7 +127,7 @@ def _write_mapping_stats(GTF_file, files_process_index, sorted_sam_files,  stats
     stats_output_merged = stats_root + "/" + sample_name + ".stats"
     logging.info("Generating mapping statistics.")
     expected_output_stats = list_expected_output(files_process_index, ".stats", stats_root, sample_name)
-    if(overwrite == False and pre_checks(expected_output_stats) == True):
+    if(overwrite == False and pre_checks(expected_output_stats) == True and os.path.exists(stats_output_merged)):
         return (0)
     stats_output = stats_root + "/" + sample_name + "_{#}.stats"
 
@@ -204,7 +204,7 @@ def _run_quantification(quantifier, counts_dir, mapping_root, sample_name, files
     expected_output_counts = list_expected_output(files_process_index, ConfigSectionMap("EXTENSIONS")['ext_counts'], quant_output_dir, sample_name)
     output_file = quant_output_dir + "/" + sample_name + "_" + quantifier.replace(".", "_")  + ConfigSectionMap("EXTENSIONS")['ext_counts']
     #If doesn't exist, create dir and run
-    if(pre_checks(expected_output_counts) == False or overwrite == True):
+    if(pre_checks(expected_output_counts) == False or overwrite == True or os.path.exists(output_file)==False):
         make_dir(quant_output_dir)
         
         #Check if required sorted bam files exist
@@ -224,7 +224,7 @@ def _run_quantification(quantifier, counts_dir, mapping_root, sample_name, files
         #Run selected quantification tool
         if("HTSeq" in quantifier):
             code = execute_htseq(sample_name,quantifier, quant_args, genome, sorted_bam_files, output_counts, files_process_index, log_file, cluster)
-            merge(expected_output_counts, output_file,[1, -1])
+            merge(expected_output_counts, output_file,[1], -1)
         elif("cufflinks" in quantifier):
             code = 0
             code = execute_cufflink(sample_name, quantifier, quant_args, genome, sorted_bam_files, quant_output_dir, output_counts, files_process_index, log_file, cluster)
@@ -569,6 +569,8 @@ def exec_star_mapping(mapper, mapper_args, read_length, used_genome, files_index
     log_file1 = mapping_dir + "/" + sample_name + "_%I.mapping.log"
     output_sam_file = mapping_dir + "/" + sample_name + "_{#}" + ConfigSectionMap("EXTENSIONS")['ext_sam']
     commands.append(star)
+    commands.append("--outFileNamePrefix")
+    commands.append(mapping_dir + "/" + sample_name + "_{#}.")
     commands.append("--genomeDir")
     commands.append(genome_dir)
     commands.append("--readFilesIn")
@@ -586,13 +588,14 @@ def exec_star_mapping(mapper, mapper_args, read_length, used_genome, files_index
         f = TEMP.replace("{#}", str(i))
         if(os.path.isdir(f)):
             shutil.rmtree(f)
-    commands.append("--outTmpDir")
-    commands.append(TEMP)
+    #commands.append("--outTmpDir")
+    #commands.append(TEMP)
 
     options = convert_to_default_map_param(mapper_args)
     splice = "-splice" in options
 
     if (splice):
+       commands.append("--sjdbGTFfile")
        commands.append(GTF) 
        options.remove("-splice")
 
@@ -621,10 +624,13 @@ def exec_gmap_mapping(mapper, mapper_args, read_length, used_genome, files_index
     options = convert_to_default_map_param(mapper_args)
     splice = "-splice" in options
     splice_f = genome_dir + "/" + used_genome + ConfigSectionMap("EXTENSIONS")['ext_gsnap_splice']
+    print (splice_f)
     #Only add splice file if not empty. Otherwise gmap results in a weired error
     if(splice == True and os.stat(splice_f).st_size > 0):
         commands.append("-s")
         commands.append(genome_dir + "/" + used_genome)
+        commands.append("-N")
+        commands.append(1)
         options.remove("-splice") 
 
     commands.append(" ".join(options))
@@ -1102,7 +1108,7 @@ def execute(files_process_index, commands, log_file, cluster, speed=False):
     files_process_index = list(files_process_index)
     
     ranges = []
-
+    num_files = len(files_process_index)
     if (len(files_process_index) > 1):
         for k, g in groupby(enumerate(files_process_index), lambda (i,x):i-x):
             group = map(itemgetter(1), g)
@@ -1114,16 +1120,15 @@ def execute(files_process_index, commands, log_file, cluster, speed=False):
     #WRITE COMMAND TO LOG FILE
     
     logging.info("Executed Command: " + " ".join(commands)) # python will convert \n to os.linesep
-
     #CHOSE EITHER OF THE TWO CLUSTERING SYSYEMS
     if (cluster == "ebi"):
-        code = run_on_EBI(files_process_index, commands, log_file, speed)
+        code = run_on_EBI(num_files, files_process_index, commands, log_file, speed)
     elif (cluster == "aws"):
         code = run_on_AWS(files_process_index, commands, log_file)
     return code
 
 #CONVERT PARAMETERS TO ONE COMMAND THAT CAN BE RUN ONTO THE EBI CLUSTER
-def run_on_EBI(files_process_index, commands, log_file, speed=False):
+def run_on_EBI(num_files, files_process_index, commands, log_file, speed=False):
         import time
         code = 0
 
@@ -1140,7 +1145,7 @@ def run_on_EBI(files_process_index, commands, log_file, speed=False):
 #        select_statement = "-R \"select[panfs_nobackup_research]\""
         cluster_command.append("bsub")
     
-        ram = "10000"
+        ram = "50000"
         cpu = "2"
         if (speed == True):
             if (args.ram != None):
@@ -1209,18 +1214,18 @@ def run_on_EBI(files_process_index, commands, log_file, speed=False):
                 #CHECK IF COMPLETED
                 #IF ERRORS RE-RUN ONE MORE TIME. THEN SHUT DOWN 
                 #TO DO
-                if (len(completed) == len(status) or (len(running) == 0 and len(pending) == 0 and (len(exit) + len(uknown) ==  len(status)))): 
+                if (len(completed) == (num_files) or (len(running) == 0 and len(pending) == 0 and (len(exit) + len(uknown) == (num_files)))): 
                     not_done = False
                     code = 0
                     endProgress()
-                    logging.info("Jobs Completed:" + str(len(completed)) + "/" + str(len(status)))
+                    logging.info("Jobs Completed:" + str(len(completed)) + "/" + str((num_files)))
                     if(len(exit) > 0):
-                        logging.error("Jobs Exited:" + str(len(exit)) + "/" + str(len(status)))
+                        logging.error("Jobs Exited:" + str(len(exit)) + "/" + str((num_files)))
                         code = 1
                 #PRINT STATUS
                 else :
                     not_done = True
-                    p = float(len(completed)+len(exit))/float(len(status))
+                    p = float(len(completed)+len(exit))/float((num_files))
                     progress(p*100)
                 time.sleep(1)
     
